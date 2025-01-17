@@ -7,6 +7,7 @@ import sdk, {
   type Context,
 } from "@farcaster/frame-sdk";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "~/components/ui/card";
+import { toast } from "~/components/ui/use-toast";
 
 import { config } from "~/components/providers/WagmiProvider";
 import { PurpleButton } from "~/components/ui/PurpleButton";
@@ -44,20 +45,44 @@ export default function Frame(
   const [added, setAdded] = useState(false);
 
   const [addFrameResult, setAddFrameResult] = useState("");
+  const [notificationStatus, setNotificationStatus] = useState<'enabled'|'disabled'|'unknown'>('unknown');
 
   const addFrame = useCallback(async () => {
     try {
       await sdk.actions.addFrame();
+      toast({
+        title: "Frame Added",
+        description: "This frame has been successfully added to your Warpcast client",
+      });
     } catch (error) {
+      let errorMessage = "An error occurred";
       if (error instanceof AddFrame.RejectedByUser) {
-        setAddFrameResult(`Not added: ${error.message}`);
+        errorMessage = `Not added: ${error.message}`;
+      } else if (error instanceof AddFrame.InvalidDomainManifest) {
+        errorMessage = `Not added: ${error.message}`;
       }
+      
+      setAddFrameResult(errorMessage);
+      toast({
+        title: "Frame Add Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  }, []);
 
-      if (error instanceof AddFrame.InvalidDomainManifest) {
-        setAddFrameResult(`Not added: ${error.message}`);
+  const checkNotifications = useCallback(async () => {
+    try {
+      const status = await sdk.actions.getNotificationStatus();
+      setNotificationStatus(status);
+      if (status === 'enabled') {
+        toast({
+          title: "Notifications Enabled",
+          description: "You'll receive updates from this frame",
+        });
       }
-
-      setAddFrameResult(`Error: ${error}`);
+    } catch (error) {
+      console.error("Failed to check notification status:", error);
     }
   }, []);
 
@@ -91,10 +116,24 @@ export default function Frame(
 
       sdk.on("notificationsEnabled", ({ notificationDetails }) => {
         console.log("notificationsEnabled", notificationDetails);
+        setNotificationStatus('enabled');
+        toast({
+          title: "Notifications Enabled",
+          description: "You'll receive updates from this frame",
+        });
       });
       sdk.on("notificationsDisabled", () => {
         console.log("notificationsDisabled");
+        setNotificationStatus('disabled');
+        toast({
+          title: "Notifications Disabled",
+          description: "You won't receive updates from this frame",
+          variant: "destructive",
+        });
       });
+
+      // Check initial notification status
+      checkNotifications();
 
       sdk.on("primaryButtonClicked", () => {
         console.log("primaryButtonClicked");
@@ -138,6 +177,16 @@ export default function Frame(
       <div className="w-[300px] mx-auto py-2 px-2">
         <h1 className="text-2xl font-bold text-center mb-4 text-neutral-900">{title}</h1>
         <ExampleCard />
+        
+        <div className="mt-4 space-y-2">
+          <Label>Notifications: {notificationStatus === 'enabled' ? '✅ Enabled' : '❌ Disabled'}</Label>
+          <PurpleButton 
+            onClick={() => sdk.actions.enableNotifications()} 
+            disabled={notificationStatus === 'enabled'}
+          >
+            Enable Notifications
+          </PurpleButton>
+        </div>
       </div>
     </div>
   );
